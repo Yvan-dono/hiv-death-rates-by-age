@@ -1,0 +1,486 @@
+---
+title: "Taux de mortalité liés au VIH par âge"
+author: "Nzokou Tankam Yvan"
+date: "2025-12-17"
+output:
+  html_document: default
+  pdf_document: default
+---
+### Problématique : Comment les décès du VIH varient-ils mondialement et par tranches d'âge ?
+
+L’objectif de ce projet est d’analyser et de comparer la répartition intercontinentale des décès liés au VIH ainsi qu’entre diverses tranches d’âge. Il s’agit d’identifier les variations géographiques et démographiques dans la mortalité associée au VIH, afin de mieux comprendre les populations les plus touchées et de mettre en évidence les disparités éventuelles.
+
+Le jeu de données hiv-death-rates-by-age décrit l'évolution des taux de décès liés au VIH (pour 100 000 habitants), par pays, par année et par tranche d'âge, sur la période 1990–2017, permettant d'analyser finement les disparités géographiques et démographiques de l'épidémie.
+
+Voici un petit aperçu de ce que contient le jeu de données :
+```{r, echo=FALSE}
+hiv <- read.csv("hiv-death-rates-by-age.csv", sep=",") 
+head(hiv)
+```
+
+
+### Représenter graphiquement la distribution des données par continent :
+```{r, message=FALSE, warning=FALSE}
+library(rstatix)
+library(countrycode)
+library(dplyr)
+
+# Encodage des pays (pays -> continents)
+hiv <- hiv %>%
+  mutate(
+    continents = countrycode(
+      sourcevar = Entity,
+      origin = "country.name",
+      destination = "continent"))
+
+hiv_continents <- hiv %>%
+ filter(!is.na(continents)) %>%  # Filtre les NA et garde seulement les pays
+ group_by(continents) %>%
+ summarise(total_deaths = sum(Deaths_AllAges, na.rm = TRUE))
+
+# Convertir les totaux en pourcentages cumulés
+hiv_continents <- hiv_continents %>%
+ mutate(pourcent_cumule = 100 * total_deaths / sum(total_deaths))
+```
+
+
+```{r}
+valeurs <- hiv_continents$pourcent_cumule
+
+# Contenu de la légende
+labs <- paste0(hiv_continents$continents, " (", round(valeurs,1), "%)")
+cols <- rainbow(length(valeurs))
+
+# Camembert 
+pie(valeurs,
+    labels = NA, # Retire les labels du camembert
+    col = cols,
+    main = "Répartition des décès liés au VIH par continent (1990–2017)",
+    radius = 1   # Taille du graphique
+    )
+
+# Ajout d'une légende
+legend(1.1, 1.1, # Position : x=1.1 (droite), y=1.1 (haut)
+  "topright", 
+  legend = labs, # Texte de la légende
+  fill = cols,
+  cex = 1,       # Taille du texte
+  bty = "n",     # Enlève la bordure
+  xpd = TRUE)    # Pour aller hors limites    
+```
+
+On constate une domination de l'Afrique par rapport aux autres continents en termes de décès liés au VIH entre 1990 et 2017. L’Afrique concentre la majorité des décès liés au VIH en raison d’une forte prévalence du virus, d’un accès tardif et limité aux traitements antirétroviraux, et de systèmes de santé fragiles. La pauvreté, les inégalités d'accès aux soins et le dépistage souvent tardif ont aggravés la situation.
+
+### Représenter graphiquement la distribution des données par classe d’âge :
+
+```{r}
+hiv_continents <- hiv %>%
+  filter(!is.na(continents)) %>% 
+  group_by(continents) %>%
+  summarise(
+    Under_5 = sum(Deaths_Under_5, na.rm = TRUE),
+    Between_5.14_years = sum(Deaths_5.14_years, na.rm = TRUE),
+    Between_15.49_years = sum(Deaths_15.49_years, na.rm = TRUE),
+    Between_50.69_years = sum(Deaths_50.69_years, na.rm = TRUE),
+    Superior_70plus_years = sum(Deaths_70plus_years, na.rm = TRUE)
+  ) %>%
+  rowwise() %>%  # rowise() fait en sorte que mutate() s'applique ligne par ligne 
+  # Somme des tranches d'age par continents
+  mutate(total_continent = sum(c_across(Under_5:Superior_70plus_years))) %>%
+  ungroup() %>%
+  # Conversion des données
+  mutate(Under_5 = 100 * Under_5 / total_continent,
+         Between_5.14_years = 100 * Between_5.14_years / total_continent,
+         Between_15.49_years = 100 * Between_15.49_years / total_continent,
+         Between_50.69_years = 100 * Between_50.69_years / total_continent,
+         Superior_70plus_years = 100 * Superior_70plus_years / total_continent)
+```
+
+
+```{r}
+# Contenu de la légende
+classes <- c("0-5 ans", "5-14 ans", "15-49 ans", "50-69 ans", "70+ ans")
+cols    <- rainbow(5)
+
+for (i in 1:nrow(hiv_continents)) {
+  
+  par(mfrow = c(1, 1), mar = c(5, 5, 4, 2))
+  
+  # Récupère les 5 pourcentages pour le continent i
+  valeurs <- as.numeric(hiv_continents[i, 2:6])
+  if (length(valeurs) != 5) next
+  
+  valeurs[valeurs <= 0] <- 0.01
+  pourcent_age <- 100 * valeurs / sum(valeurs)
+  names(pourcent_age) <- classes
+  
+  # Barplot
+  bp <- barplot(pourcent_age,
+                col   = cols,
+                ylim  = c(0, 100),  
+                ylab  = "Pourcentage des décès (%)",
+                xlab  = "Tranches d'âge",
+                main  = paste("Décès liés au VIH par tranche d'âge -",
+                              hiv_continents$continents[i]),
+                cex.names = 0.9)
+  
+# Ajout des pourcentages au-dessus de chaque barre
+text(x = bp,
+     y = pourcent_age,
+     labels = paste0(round(pourcent_age, 1), " %"),
+     pos = 3,   # Affichage au-dessus des barres
+     cex = 0.9)
+}
+
+```
+
+Les diagrammes reflètent les différents modes de transmission du VIH. Le VIH est transmissible le plus fréquemment sexuellement. Il se transmet de la mère à l'enfant pendant la grossesse, à l’accouchement ou bien pendant l’allaitement mais également par contact avec du sang contaminé.
+
+### Quelle est la tranche d’âge la plus touchée ?
+
+```{r, message=FALSE, warning=FALSE}
+library(dplyr)
+library(tidyr)
+
+# Transformation des données en format long 
+hiv2 <- hiv %>%
+  filter(Year >= 1990, Year <= 2017) %>% # Filtrer la période (1990-2017)
+  select(Year, Entity, Deaths_Under_5, Deaths_5.14_years, 
+         Deaths_15.49_years, Deaths_50.69_years, Deaths_70plus_years) %>%
+  pivot_longer(cols = -c(Year, Entity), # Exclusion des colonnes 'Year' et 'Entity'
+               names_to = "age_group", 
+               values_to = "death_rate") %>%
+  # Changement des labels (plus lisible)
+  mutate(age_group = case_when(
+    age_group == "Deaths_Under_5" ~ "0-5 ans",
+    age_group == "Deaths_5.14_years" ~ "5-14 ans", 
+    age_group == "Deaths_15.49_years" ~ "15-49 ans",
+    age_group == "Deaths_50.69_years" ~ "50-69 ans",
+    age_group == "Deaths_70plus_years" ~ "70+ ans"
+  ))
+
+# Taux de décès moyen par année et âge
+death_age <- hiv2 %>%
+  group_by(Year, age_group) %>%
+  summarise(mean_rate = mean(death_rate, na.rm = TRUE), .groups = "drop")
+```
+
+
+```{r}
+library(ggplot2)
+
+ggplot(death_age, aes(x = Year, y = mean_rate, color = age_group)) +
+  geom_line() +  # Trace les courbes
+  geom_point() + # Trace les points
+  labs(title = "Évolution temporelle des taux de décès liés au VIH par tranche d'âge (1990-2017)",
+       x = "Année", y = "Taux moyen de décès pour 100 000 habitants",
+       color = "Tranche d'âge") 
+```
+
+On constate une croissance du taux de décès moyen pour toutes les tranches d'âge des années 1990 à 2004 environ. Puis, on observe une baisse après cette période qui correspond à l'accélération du déploiement des traitements antirétroviraux. Entre 1990 et 2017, la proportion d’adultes âgés (50–69 ans) est la plus touchée par le VIH étant donné que les infections peuvent être récentes avec le maintien de l'activité sexuelle mais également antérieurs. Les personnes infectées plus jeunes survivent plus longtemps et vieillissent avec le VIH, ce qui entraîne une accumulation de cas dans cette tranche d'âge. Les adultes âgés sont aussi moins ciblées par les campagnes de prévention et souvent dépistées tardivement par le fait . Ainsi, l’augmentation du taux de décès du VIH chez les adultes âgés résulte à la fois du vieillissement des personnes vivant avec le VIH et de nouvelles contaminations.
+
+### Quels sont en moyenne les pays les plus touchés entre 1990 et 2017 ?
+
+Afin de localiser les zones concentrant le plus grand nombre de cas, on va mettre en évidence les pays où le nombre de cas est le plus élevé.
+
+```{r}
+library(dplyr)
+
+top10 <- hiv %>%
+  filter(Year >= 1990, Year <= 2017, !is.na(Entity)) %>% 
+  group_by(Entity) %>%
+  summarise(
+    Moyenne_décès = mean(Deaths_AllAges, na.rm = TRUE),  
+    .groups = "drop"
+  ) %>%
+  arrange(desc(Moyenne_décès)) %>%  # Trie par ordre décroissant
+  
+head(10)
+
+top10
+```
+
+On constate que beaucoup de ces pays sont situés dans le sud de l’Afrique subsaharienne (Zimbabwe, Lesotho, Eswatini, Botswana, Malawi, Zambie, Afrique du Sud, Namibie). 
+La concentration élevée de cas dans ces pays peut être attribuée en grande partie à des prévalences très élevées de VIH en Afrique subsaharienne (Afrique australe), notamment dans les zones les plus urbanisées de ces pays. Elle provient également des disparités dans l’accès aux services de santé et à des conditions socio‑économiques qui augmentent la vulnérabilité des populations (pauvreté, malnutrition...).
+
+### Le taux de décès diffère-t-il entre les continents ? Entre les tranches d’âge ?
+
+Pour mieux comprendre l’impact du VIH à l’échelle mondiale, il est intéressant de se demander si le taux de décès varie selon les continents et les tranches d’âge. Pour répondre à cette question, nous allons réaliser des analyses statistiques. 
+
+Etapes : 
+
+- Vérifier la normalité 
+
+- Vérifier l'égalité des variances
+
+- Transformation des données si besoin
+
+- Si la normalité est vérifiée  -> Test d'ANOVA 
+
+  Si la normalité n'est pas vérifiée -> Test Kruskal-Wallis 
+
+#### Analyses statistiques sur les taux de décès par continent :
+  
+Afin de vérifier la normalité et l’égalité des variances, on va effectuer une analyse des résidus de l’ANOVA et vérifier la normalité de chaque continent séparément par la suite.
+
+Première étape : Créer un modèle linéaire à partir du jeu de données et tracer un diagramme de normalité pour vérifier la normalité des résidus du modèle 
+```{r}
+# Analyse des résidus de l’ANOVA
+model <- lm(Deaths_AllAges ~ continents, data = hiv)
+library(ggpubr)
+ggqqplot(residuals(model), title = "Diagramme de normalité des résidus du modèle")
+```
+
+On constate un éloignement des points de la ligne droite qui est caractéristique d'une distribution anormale des résidus.
+
+Deuxième étape : Vérifier la normalité de chaque continent séparément à travers des tests statistiques
+
+```{r}
+by(hiv$Deaths_AllAges, hiv$continents, shapiro.test)
+```
+
+Interprétation des tests :
+
+H0 : La normalité est vérifiée. (hypothèse nulle)
+
+H1 : La normalité n'est pas vérifiée. (hypothèse alternative)
+
+H0 est rejettée pour l'ensemble des continents et H1 est validée (p-value<0.05). Donc, les distributions des continents ne suivent pas une loi normale.
+
+Troisième étape : Vérifier la normalité des continents séparément à travers leurs distributions
+```{r}
+hiv_nettoyé <- hiv %>%
+  filter(!is.na(continents))  
+ggqqplot(hiv_nettoyé, "Deaths_AllAges", facet.by = "continents", color = "continents")
+```
+
+Etrangement, on constate que sur la majorité des diagrammes de normalité des continents les points sont majoritairement proches de la ligne droite. Cela signifit que les données suivent une distribution normale. Cependant, cela entre en contradiction avec les résultats du test de Shapiro-Wilk qui affirment le contraire. 
+
+D'après les résultats observés à travers les diagrammes et tests statistiques, la normalité du modèle reste difficile à valider au vu des résultats obtenus. Une transformation du modèle va etre nécessaire pour y remédier.
+
+Quatrième étape : Vérifier l'égalité des variances du modèle
+```{r}
+plot(model, 1)
+```
+
+Les résidus sont serrés à droite de 0 ce qui indique que la variance augmente. On observe un motif en “entonnoir" caractéristique d'une hétéroscédasticité. Les variances ne sont donc pas égales. 
+
+Transformation des données (log(Deaths_AllAges)) et nouvelle vérification de la normalité et de l’égalité des variances :
+
+Première étape : Transformation des données 
+```{r}
+hiv$log_Deaths_AllAges <- log(hiv$Deaths_AllAges)
+```
+
+Deuxième étape : Vérifier à nouveau la normalité et l'égalité des variances 
+```{r}
+hiv <- hiv %>%
+  # Filtrer pour enlever les NA du model
+  filter(
+    is.finite(log_Deaths_AllAges),
+    !is.na(continents)
+    )
+model2 <- lm(log_Deaths_AllAges ~ continents, data = hiv)
+library(ggpubr)
+ggqqplot(residuals(model2), title = "Diagramme de normalité des résidus du modèle transformé")
+```
+
+Cette fois, les points sont plus proches de la ligne droite. Cela signifit que les données suivent une distribution normale.
+
+```{r}
+by(hiv$log_Deaths_AllAges, hiv$continents, shapiro.test)
+```
+
+Interprétation des tests :
+
+H0 : La normalité est vérifiée. (hypothèse nulle)
+
+H1 : La normalité n'est pas vérifiée. (hypothèse alternative)
+
+Malgré la transformation du modèle les résultats ne changent pas. H0 est rejettée pour l'ensemble des continents à l'exception de l'Amérique et H1 est validée (p-value<0.05). Donc, les distributions des continents ne suivent toujours pas une loi normale.
+
+```{r}
+ggqqplot(hiv, "log_Deaths_AllAges", facet.by = "continents", color = "continents") 
+```
+
+Etrangement, on constate que sur la majorité des diagrammes de normalité des continents les points sont majoritairement proches de la ligne droite. Cela signifit que les données suivent une distribution normale. Cependant, cela entre en contradiction avec les résultats du test de Shapiro-Wilk qui affirment le contraire. 
+
+```{r}
+plot(model2, 1)
+```
+
+Les résidus forment un nuage de points horizontal sans tendance autour de 0. Ce graphique montre une homoscédasticité du modèle. Les variances sont donc égales. 
+
+D'après les résultats observés à travers les diagrammes et tests statistiques, la normalité du modèle transformé ne peut être validée au vu des résultats obtenus. Etant donné que la normalité n'a pas été vérifiée on va devoir utliser des tests non-paramétriques afin de réaliser nos analyses statistiques. 
+
+Exécution des tests statistiques :
+
+Afin de savoir si les taux de décès des continents sont différentes et identifier quels continents sont différents les uns des autres si telle est le cas on va réaliser un test de Kruskal–Wallis suivi d'un test de Dunn.
+
+```{r}
+kruskal.log <- kruskal.test(log_Deaths_AllAges ~ continents, data = hiv)
+kruskal.log
+```
+
+Interprétation du test :
+
+H0 : Les taux de décès sont les mêmes. (hypothèse nulle)
+
+H1 : Les taux de décès diffèrent. (hypothèse alternative)
+
+H0 est rejetté et H1 est validée (p<0.05). Le test de Kruskal-Wallis nous montre que les taux de décès moyens diffèrent pour au moins deux des continents.
+
+```{r, message=FALSE, warning=FALSE }
+library(FSA)
+
+dunn.log <- dunnTest(log_Deaths_AllAges ~ continents, data = hiv, method = "bonferroni")
+# method bonferroni utilisée pour éviter que les multiples comparaisons soient dues au hasard.
+dunn.log
+```
+
+La colonne "p adj" indique que les groupes diffèrent significativement si p < 0.05.
+
+Le test post-hoc de Dunn montre que les taux de décès diffèrent significativement entre la majorité des continents (p < 0.05 pour toutes les comparaisons), à l’exception de l’Asie et de l’Europe, pour lesquelles aucune différence significative n’est observée (p > 0.05).
+
+On peut en conclure que les taux de décès liés au VIH diffèrent significativement selon les continents.
+
+#### Analyses statistiques sur les taux de décès en fonction de la tranche d'age :
+
+Afin de vérifier la normalité et l’égalité des variances, on va effectuer une analyse des résidus de l’ANOVA et vérifier la normalité de chaque tranche d'age séparément par la suite.
+```{r}
+# Analyse des résidus de l’ANOVA
+model3 <- lm(death_rate ~ age_group, data = hiv2)
+library(ggpubr)
+ggqqplot(residuals(model), title = "Diagramme de normalité des résidus du modèle")
+```
+
+On constate un éloignement des points de la ligne droite qui est caractéristique d'une distribution anormale des résidus.
+
+Vérifier la normalité des tranches d'age séparément à travers leurs distributions :
+```{r}
+ggqqplot(hiv2, "death_rate", facet.by = "age_group", color = "age_group")
+```
+
+On constate que sur la majorité des diagrammes de normalité des tranches d'age les points sont éloignés de la ligne droite. Cela confirme que les données ne suivent pas une distribution normale.
+
+Vérifier l'égalité des variances :
+```{r}
+plot(model3, 1)
+```
+
+Les résidus sont serrés à droite de 0 ce qui indique que la variance augmente. On observe un motif en “entonnoir" caractéristique d'une hétéroscédasticité. Les variances ne sont donc pas égales.
+
+Transformer les données (log(death_rate)) et revérifier la normalité et l’égalité des variances :
+
+Transformation des données : 
+```{r}
+hiv2$log_death_rate <- log(hiv2$death_rate)
+```
+
+Modèle transformé : 
+```{r}
+hiv2 <- hiv2 %>%
+  # Filtrer pour enlever les NA du model
+  filter(
+    is.finite(log_death_rate)
+    )
+
+model4 <- lm(log_death_rate ~ age_group, data = hiv2)
+library(ggpubr)
+ggqqplot(residuals(model4), title = "Diagramme de normalité des résidus du modèle transformé")
+```
+
+Cette fois, les points sont majoitairement plus proches de la ligne droite. Cela signifit que les données suivent une distribution normale.
+
+Vérifier la normalité des tranches d'age séparément à travers leurs distributions :
+```{r}
+ggqqplot(hiv2, "log_death_rate", facet.by = "age_group", color = "age_group")
+```
+
+On constate que sur la majorité des diagrammes de normalité des tranches d'age les points sont proches de la ligne droite. Cela confirme que les données suivent une distribution normale. 
+
+Vérifier l'égalité des variances :
+```{r}
+plot(model4, 1)
+```
+
+Les résidus forment un nuage de points horizontal sans tendance autour de 0. Ce graphique montre une homoscédasticité du modèle. Les variances sont donc égales. 
+
+D'après les résultats observés à travers les diagrammes, la normalité du modèle transformé est validée au vu des résultats obtenus. 
+
+Exécution des tests statistiques :
+
+Afin de savoir si les taux de décès diffèrent entre tranches d'âge sur 1 et identifier quelles tranches d'age sont différentes les unes des autres si telle est le cas on va réaliser un test d'ANOVA suivi d'un test post-hoc de Tukey.
+
+Test d'ANOVA :
+```{r}
+anova.log <- aov(log_death_rate ~ age_group, data = hiv2)
+summary(anova.log)
+```
+
+Interprétation du test :
+
+H0 : Les taux de décès entre tranches d'age diffèrent. (hypothèse nulle)
+
+H1 : Les taux de décès entre tranches d'age sont les mêmes. (hypothèse alternative)
+
+H0 est validée (p-value<0.05) et H1 est rejettée. Le test d'ANOVA nous montre que les taux de décès entre tranches d'age diffèrent pour au moins deux des tranches d'age.
+
+Test post-hoc de Tukey :
+```{r}
+Tuk_test <- TukeyHSD(anova.log, conf.level = 0.95)
+Tuk_test
+```
+
+Toutes les paires de tranches d'age sont significatives (p<0.05) à l'exception de celle des tranches de 15–49 ans et 50–69 ans (p>0.05). 
+
+La colonne "p adj" indique que ces groupes diffèrent significativement (p<0.05). 
+
+Les colonnes "lwr" et "upr" (intervalle de confiance) le confirment également étant donné que ce sont les seuls paires pour lesquelles 0 n'est pas compris dans l'intervalle. 
+
+La colonne "diff" indique les différences de taux de décès entre les tranches d'age.  
+
+Le test post-hoc de Tukey montre que les taux de décès diffèrent significativement entre la majorité des tranches d’âge. Les tranches 15–49 ans et 50–69 ans ne présentent pas de différence significative, tandis que la tranche 5–14 ans présente des taux significativement plus faibles que tous les autres. La tranche 70+ ans présente des taux intermédiaires, inférieurs à ceux des adultes de 15–49 ans et de 50–69 ans mais supérieurs à ceux des enfants de 5–14 ans.
+
+On peut également l'illustrer à travers un graphique : 
+```{r}
+par (mar=c(5,12,4,2))
+plot(Tuk_test, las=1)
+```
+
+Dans ce graphique, les barres qui ne croisent pas 0 sont significatives. On voit bien que seuls le groupe des tranches de 15–49 ans et 50–69 ans croise 0. Cela confirme donc les résultats du test post-hoc de Tukey.
+
+On peut en conclure que les taux de décès liés au VIH diffèrent significativement entre tranches d'age.
+
+
+### Sources :
+
+Les données et informations utilisées pour le projet proviennent des sources suivantes :
+
+- [Our World in Data - HIV/AIDS dataset](https://ourworldindata.org/hiv-aids)
+
+- [AIDES - L’actualité REMAIDES et personnes vivant avec le VIH](https://www.aides.org/actualite/lactu-remaides-personnes-vih-)
+
+- [UNAIDS - HIV and Aging (PDF)](https://www.unaids.org/sites/default/files/media_asset/20131101_JC2563_hiv-and-aging_fr_0.pdf?utm_source=chatgpt.com) 
+
+- [Article scientifique : BMC Public Health, 2020](https://doi.org/10.1186/s12889-020-08988-9)
+
+- [UNICEF - Afrique de l'Ouest VIH](https://www.unicef.org/fr/communiqu%C3%A9s-de-presse/lafrique-de-louest-et-du-centre-en-retard-sur-la-riposte-mondiale-au-vih)
+
+- [Wikipedia - 3 by 5 Initiative](https://en.wikipedia.org/w/index.php?title=3_by_5_Initiative&oldid=1187379182)
+
+Documentation R utilisée : 
+
+- [countrycode - Référence countrycode()](https://www.rdocumentation.org/packages/countrycode/versions/1.6.1/topics/countrycode)
+
+- [dplyr - group_by()](https://dplyr.tidyverse.org/reference/group_by.html)
+
+- [Statology - dplyr::case_when()](https://www.statology.org/dplyr-case_when/)
+
+- [Statology - pivot_longer()](https://www.statology.org/pivot_longer-in-r/)
+
+- [R base - paste()](https://www.rdocumentation.org/packages/base/versions/3.6.2/topics/paste)
+
+- [dplyr - rowwise() article](https://dplyr.tidyverse.org/articles/rowwise.html)
+
+- [dplyr - rowwise() référence](https://www.rdocumentation.org/packages/dplyr/versions/1.0.10/topics/rowwise)
